@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
 
 from .api import SHADE_TYPE, PowerViewBLE
-from .const import ATTR_RSSI, DOMAIN, HOME_KEY, LOGGER
+from .const import ATTR_RSSI, CONF_HOME_KEY, DOMAIN, LOGGER
 
 
 class PVCoordinator(PassiveBluetoothDataUpdateCoordinator):
@@ -25,7 +25,9 @@ class PVCoordinator(PassiveBluetoothDataUpdateCoordinator):
         """Initialize BMS data coordinator."""
         assert ble_device.name is not None
         self._mac = ble_device.address
-        self.api = PowerViewBLE(ble_device, HOME_KEY)
+        home_key_hex: str = data.get(CONF_HOME_KEY, "")
+        home_key: bytes = bytes.fromhex(home_key_hex) if len(home_key_hex) == 32 else b""
+        self.api = PowerViewBLE(ble_device, home_key)
         self.data: dict[str, int | float | bool] = {}
         self._manuf_dat = data.get("manufacturer_data")
         self.dev_details: dict[str, str] = {}

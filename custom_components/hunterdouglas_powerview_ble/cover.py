@@ -22,7 +22,7 @@ from homeassistant.helpers.device_registry import DeviceInfo, format_mac
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import CLOSED_POSITION, OPEN_POSITION
-from .const import DOMAIN, HOME_KEY, LOGGER
+from .const import DOMAIN, LOGGER
 from .coordinator import PVCoordinator
 
 
@@ -107,7 +107,7 @@ class PowerViewCover(PassiveBluetoothCoordinatorEntity[PVCoordinator], CoverEnti
     def supported_features(self) -> CoverEntityFeature:  # type: ignore[reportIncompatibleVariableOverride]
         """Flag supported features, disable control if encryption is needed."""
         if (
-            self._coord.data.get("home_id") and len(HOME_KEY) != 16
+            self._coord.data.get("home_id") and not self._coord.api.has_key
         ) or self._coord.data.get("battery_charging"):
             return CoverEntityFeature(0)
 
