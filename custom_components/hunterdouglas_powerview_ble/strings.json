@@ -31,6 +31,9 @@
           "home_key": "32-character hex string (e.g. 0102030405060708090a0b0c0d0e0f10) or \\x escaped format (e.g. \\x01\\x02...)"
         }
       },
+      "auto_add_confirm": {
+        "description": "Do you want to set up {name}?"
+      },
       "select_device": {
         "title": "Select Shades",
         "description": "Select the PowerView shades to add via Bluetooth.",

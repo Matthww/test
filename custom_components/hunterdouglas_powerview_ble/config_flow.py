@@ -458,13 +458,31 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_auto_add(
-        self, user_input: dict[str, Any]
+        self, discovery_info: dict[str, Any]
     ) -> ConfigFlowResult:
-        """Create a config entry for a shade selected via multi-select."""
-        await self.async_set_unique_id(user_input["address"])
+        """Handle a shade queued from multi-select for individual setup."""
+        await self.async_set_unique_id(discovery_info["address"])
         self._abort_if_unique_id_configured()
-        return self.async_create_entry(
-            title=user_input["name"], data=user_input["data"]
+
+        self._device_name = discovery_info["name"]
+        self._manufacturer_data_hex = discovery_info["data"]["manufacturer_data"]
+        self._home_key = discovery_info["data"].get(CONF_HOME_KEY, "")
+        self._hub_url = discovery_info["data"].get("hub_url", "")
+
+        self.context["title_placeholders"] = {"name": self._device_name}
+        return await self.async_step_auto_add_confirm()
+
+    async def async_step_auto_add_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Confirm adding a shade discovered via multi-select."""
+        if user_input is not None:
+            return self._create_entry()
+
+        self._set_confirm_only()
+        return self.async_show_form(
+            step_id="auto_add_confirm",
+            description_placeholders={"name": self._device_name},
         )
 
     async def async_step_manual(
