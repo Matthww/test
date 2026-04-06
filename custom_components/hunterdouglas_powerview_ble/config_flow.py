@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import contextlib
 from dataclasses import dataclass
 import struct
 from typing import Any
@@ -372,12 +373,23 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle the user step — reuse existing key or collect one."""
+        """Handle the user step — reuse existing key or offer a menu."""
         LOGGER.debug("user step")
         existing = self._existing_home_key()
         if existing:
             self._home_key = existing
-            return await self.async_step_select_device()
+            self._hub_url = self._hub_url or self._existing_entry_value("hub_url")
+            if self._hub_url and not self._hub_shades:
+                with contextlib.suppress(
+                    TimeoutError, aiohttp.ClientError, ValueError
+                ):
+                    self._hub_shades = await _fetch_shades_from_hub(
+                        self.hass, self._hub_url
+                    )
+            return self.async_show_menu(
+                step_id="user",
+                menu_options=["select_device", "manual"],
+            )
         return await self.async_step_homekey()
 
     def _build_selected_entries(

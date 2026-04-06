@@ -2,6 +2,17 @@
     "config": {
         "flow_title": "Setup {name}",
         "step": {
+            "user": {
+                "title": "Add PowerView Shade",
+                "menu_options": {
+                    "select_device": "Select from discovered shades",
+                    "manual": "Enter device details manually"
+                },
+                "menu_option_descriptions": {
+                    "select_device": "Choose from shades detected via Bluetooth nearby.",
+                    "manual": "Enter a Bluetooth MAC address and device name directly, for example if a shade is out of range of discovery."
+                }
+            },
             "bluetooth_confirm": {
                 "description": "Do you want to set up {name}?"
             },
@@ -40,7 +51,7 @@
             },
             "manual": {
                 "title": "Enter Device Details",
-                "description": "No PowerView shades were found via Bluetooth. Enter the device details manually.",
+                "description": "Enter the device details manually.",
                 "data": {
                     "address": "Bluetooth MAC address (e.g. AA:BB:CC:DD:EE:FF)",
                     "ble_name": "BLE device name (e.g. DUE:94ED)"
