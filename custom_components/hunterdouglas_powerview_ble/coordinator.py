@@ -99,6 +99,7 @@ class PVCoordinator(PassiveBluetoothDataUpdateCoordinator):
         #     self.hass.async_create_task(self._get_device_info())
 
         LOGGER.debug("BLE event %s: %s", change, service_info.manufacturer_data)
+        self.api.set_ble_device(service_info.device)
         self.data = {ATTR_RSSI: service_info.rssi}
         if change == bluetooth.BluetoothChange.ADVERTISEMENT:
             self.data.update(

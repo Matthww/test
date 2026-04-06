@@ -97,18 +97,10 @@ class PowerViewBLE:
 
     def __init__(self, ble_device: BLEDevice, home_key: bytes = b"") -> None:
         """Initialize device API via Bluetooth."""
-        self._ble_device: Final[BLEDevice] = ble_device
+        self._ble_device: BLEDevice = ble_device
         self.name: Final[str] = self._ble_device.name or "unknown"
         self._seqcnt: int = 1
-        self._client: BleakClient = BleakClient(
-            self._ble_device,
-            disconnected_callback=self._on_disconnect,
-            services=[
-                UUID_COV_SERVICE,
-                UUID_DEV_SERVICE,
-                # self.UUID_BAT_SERVICE,
-            ],
-        )
+        self._client: BleakClient = BleakClient(self._ble_device)
         self._data_event = asyncio.Event()
         self._data: bytes = b""
         self._info: PVDeviceInfo = PVDeviceInfo()
@@ -124,6 +116,10 @@ class PowerViewBLE:
     async def _wait_event(self) -> None:
         await self._data_event.wait()
         self._data_event.clear()
+
+    def set_ble_device(self, ble_device: BLEDevice) -> None:
+        """Update the BLE device reference (e.g. when proxy details change)."""
+        self._ble_device = ble_device
 
     @property
     def encrypted(self) -> bool:
@@ -360,6 +356,7 @@ class PowerViewBLE:
             self._ble_device,
             self.name,
             disconnected_callback=self._on_disconnect,
+            ble_device_callback=lambda: self._ble_device,
             services=[
                 UUID_COV_SERVICE,
                 UUID_DEV_SERVICE,
