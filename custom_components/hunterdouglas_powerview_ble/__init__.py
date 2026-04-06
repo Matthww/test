@@ -42,7 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntryType) -> bool
             f"Could not find PowerView device ({entry.unique_id}) via Bluetooth"
         )
 
-    coordinator = PVCoordinator(hass, ble_device, entry.data.copy())
+    coordinator = PVCoordinator(hass, ble_device, entry.data.copy(), entry.title)
     try:
         await coordinator.query_dev_info()
     except BleakError as err:

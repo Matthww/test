@@ -48,6 +48,38 @@ class HubShadeInfo:
     ble_name: str  # BLE advertisement name, e.g. "DUE:94ED"
 
 
+async def _fetch_shades_from_hub(
+    hass: HomeAssistant, hub_url: str
+) -> list[HubShadeInfo]:
+    """Fetch shade list with human-readable names from a PowerView G3 hub.
+
+    Raises aiohttp.ClientError on network errors.
+    Raises asyncio.TimeoutError on timeout.
+    """
+    session = async_get_clientsession(hass)
+    timeout = aiohttp.ClientTimeout(total=10)
+
+    async with session.get(f"{hub_url}/home/shades", timeout=timeout) as resp:
+        resp.raise_for_status()
+        shades = await resp.json(content_type=None)
+
+    if not shades:
+        return []
+
+    hub_shades: list[HubShadeInfo] = []
+    for shade in shades:
+        ble_name = shade.get("bleName", "")
+        if not ble_name:
+            continue
+        name_b64 = shade.get("name", "")
+        try:
+            name = base64.b64decode(name_b64).decode("utf-8") if name_b64 else ble_name
+        except Exception:  # noqa: BLE001
+            name = ble_name
+        hub_shades.append(HubShadeInfo(name=name, ble_name=ble_name))
+    return hub_shades
+
+
 async def _fetch_key_and_shades_from_hub(
     hass: HomeAssistant, hub_url: str
 ) -> tuple[bytes, list[HubShadeInfo]]:
@@ -61,42 +93,22 @@ async def _fetch_key_and_shades_from_hub(
     Raises aiohttp.ClientError on network errors.
     Raises asyncio.TimeoutError on timeout.
     """
-    session = async_get_clientsession(hass)
-    timeout = aiohttp.ClientTimeout(total=10)
-
-    # Get list of shades from hub
-    async with session.get(f"{hub_url}/home/shades", timeout=timeout) as resp:
-        resp.raise_for_status()
-        shades = await resp.json(content_type=None)
-
-    if not shades:
+    hub_shades = await _fetch_shades_from_hub(hass, hub_url)
+    if not hub_shades:
         raise ValueError("No shades found on the hub")
 
-    # Parse shade metadata (name is base64-encoded on the hub)
-    hub_shades: list[HubShadeInfo] = []
-    for shade in shades:
-        ble_name = shade.get("bleName", "")
-        if not ble_name:
-            continue
-        name_b64 = shade.get("name", "")
-        try:
-            name = base64.b64decode(name_b64).decode("utf-8") if name_b64 else ble_name
-        except Exception:  # noqa: BLE001
-            name = ble_name
-        hub_shades.append(HubShadeInfo(name=name, ble_name=ble_name))
+    session = async_get_clientsession(hass)
+    timeout = aiohttp.ClientTimeout(total=10)
 
     # GetShadeKey BLE request: sid=251, cid=18, seqId=1, data_len=0
     request_frame = struct.pack("<BBBB", 251, 18, 1, 0)
 
     # Try each shade until one returns a valid key (some may be out of range)
     last_error: Exception = ValueError("No shades responded")
-    for shade in shades:
-        ble_name = shade.get("bleName", "")
-        if not ble_name:
-            continue
+    for hs in hub_shades:
         try:
             async with session.post(
-                f"{hub_url}/home/shades/exec?shades={ble_name}",
+                f"{hub_url}/home/shades/exec?shades={hs.ble_name}",
                 json={"hex": request_frame.hex()},
                 timeout=timeout,
             ) as resp:
@@ -126,6 +138,36 @@ async def _fetch_key_and_shades_from_hub(
     raise ValueError(f"No reachable shade returned a valid key: {last_error}")
 
 
+_HOMEKEY_SCHEMA = vol.Schema(
+    {
+        vol.Required("key_method", default="hub"): SelectSelector(
+            SelectSelectorConfig(
+                options=[
+                    {
+                        "value": "hub",
+                        "label": "Fetch automatically from PowerView hub",
+                    },
+                    {
+                        "value": "manual",
+                        "label": "Enter key manually (32 hex characters)",
+                    },
+                    {
+                        "value": "skip",
+                        "label": "Skip (no key — controls disabled for encrypted shades)",
+                    },
+                ]
+            )
+        ),
+        vol.Optional("hub_url", default="http://powerview-g3.local"): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.URL)
+        ),
+        vol.Optional("home_key", default=""): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.TEXT)
+        ),
+    }
+)
+
+
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for BT Battery Management System."""
 
@@ -147,17 +189,71 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._manufacturer_data_hex: str = ""
         self._device_name: str = ""
         self._home_key: str = ""
+        self._hub_url: str = ""
         self._hub_shades: list[HubShadeInfo] = []
 
     def _create_entry(self) -> ConfigFlowResult:
         """Create the config entry with collected data."""
+        data: dict[str, str] = {
+            "manufacturer_data": self._manufacturer_data_hex,
+            CONF_HOME_KEY: self._home_key,
+        }
+        if self._hub_url:
+            data["hub_url"] = self._hub_url
         return self.async_create_entry(
             title=self._device_name,
-            data={
-                "manufacturer_data": self._manufacturer_data_hex,
-                CONF_HOME_KEY: self._home_key,
-            },
+            data=data,
         )
+
+    async def _validate_homekey_input(
+        self, user_input: dict[str, Any], errors: dict[str, str]
+    ) -> bool:
+        """Parse and validate homekey user_input, populating self state.
+
+        Returns True on success, False on validation error (errors dict is populated).
+        On skip, self._home_key is set to "".
+        """
+        method = user_input.get("key_method", "skip")
+
+        if method == "skip":
+            self._home_key = ""
+            return True
+
+        if method == "manual":
+            raw = user_input.get("home_key", "").strip()
+            if "\\x" in raw:
+                raw = raw.replace("\\x", "")
+            if len(raw) != 32:
+                errors["home_key"] = "invalid_key_length"
+                return False
+            try:
+                bytes.fromhex(raw)
+            except ValueError:
+                errors["home_key"] = "invalid_key_format"
+                return False
+            self._home_key = raw.lower()
+            return True
+
+        if method == "hub":
+            hub_url = user_input.get("hub_url", "").rstrip("/")
+            try:
+                key, hub_shades = await _fetch_key_and_shades_from_hub(
+                    self.hass, hub_url
+                )
+                self._home_key = key.hex()
+                self._hub_url = hub_url
+                self._hub_shades = hub_shades
+                return True
+            except aiohttp.ClientResponseError:
+                errors["hub_url"] = "hub_http_error"
+            except aiohttp.ClientConnectionError:
+                errors["hub_url"] = "hub_connection_error"
+            except (asyncio.TimeoutError, TimeoutError):
+                errors["hub_url"] = "hub_timeout"
+            except ValueError:
+                errors["hub_url"] = "hub_protocol_error"
+
+        return False
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
@@ -189,6 +285,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             # Unencrypted shades can skip the homekey step entirely
             if not _needs_encryption(self._manufacturer_data_hex):
+                await self._resolve_friendly_name()
                 return self._create_entry()
 
             return await self.async_step_homekey_bluetooth()
@@ -208,95 +305,52 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         existing = self._existing_home_key()
         if existing and user_input is None:
             self._home_key = existing
+            await self._resolve_friendly_name()
             return self._create_entry()
 
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            method = user_input.get("key_method", "skip")
-
-            if method == "skip":
-                self._home_key = ""
+            if await self._validate_homekey_input(user_input, errors):
+                # Use hub name for the entry title if available
+                friendly = self._hub_name_for(self._device_name)
+                if friendly:
+                    self._device_name = friendly
                 return self._create_entry()
-
-            elif method == "manual":
-                raw = user_input.get("home_key", "").strip()
-                if "\\x" in raw:
-                    raw = raw.replace("\\x", "")
-                if len(raw) != 32:
-                    errors["home_key"] = "invalid_key_length"
-                else:
-                    try:
-                        bytes.fromhex(raw)
-                    except ValueError:
-                        errors["home_key"] = "invalid_key_format"
-                    else:
-                        self._home_key = raw.lower()
-                        return self._create_entry()
-
-            elif method == "hub":
-                hub_url = user_input.get("hub_url", "").rstrip("/")
-                try:
-                    key, hub_shades = await _fetch_key_and_shades_from_hub(
-                        self.hass, hub_url
-                    )
-                    self._home_key = key.hex()
-                    # Use hub name for the entry title if available
-                    for hs in hub_shades:
-                        if hs.ble_name == self._device_name:
-                            self._device_name = hs.name
-                            break
-                    return self._create_entry()
-                except aiohttp.ClientResponseError:
-                    errors["hub_url"] = "hub_http_error"
-                except aiohttp.ClientConnectionError:
-                    errors["hub_url"] = "hub_connection_error"
-                except (asyncio.TimeoutError, TimeoutError):
-                    errors["hub_url"] = "hub_timeout"
-                except ValueError:
-                    errors["hub_url"] = "hub_protocol_error"
 
         return self.async_show_form(
             step_id="homekey_bluetooth",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("key_method", default="hub"): SelectSelector(
-                        SelectSelectorConfig(
-                            options=[
-                                {
-                                    "value": "hub",
-                                    "label": "Fetch automatically from PowerView hub",
-                                },
-                                {
-                                    "value": "manual",
-                                    "label": "Enter key manually (32 hex characters)",
-                                },
-                                {
-                                    "value": "skip",
-                                    "label": "Skip (no key — controls disabled for encrypted shades)",
-                                },
-                            ]
-                        )
-                    ),
-                    vol.Optional("hub_url", default="http://powerview-g3.local"): TextSelector(
-                        TextSelectorConfig(type=TextSelectorType.URL)
-                    ),
-                    vol.Optional("home_key", default=""): TextSelector(
-                        TextSelectorConfig(type=TextSelectorType.TEXT)
-                    ),
-                }
-            ),
+            data_schema=_HOMEKEY_SCHEMA,
             errors=errors,
             description_placeholders={"name": self._device_name},
         )
 
+    def _existing_entry_value(self, key: str) -> str:
+        """Return the first non-empty value for *key* across configured entries."""
+        for entry in self._async_current_entries():
+            if value := entry.data.get(key, ""):
+                return value
+        return ""
+
     def _existing_home_key(self) -> str:
         """Return the home_key from any already-configured entry, or ''."""
-        for entry in self._async_current_entries():
-            key = entry.data.get(CONF_HOME_KEY, "")
-            if key:
-                return key
-        return ""
+        return self._existing_entry_value(CONF_HOME_KEY)
+
+    async def _resolve_friendly_name(self) -> None:
+        """Try to resolve BLE device name to hub friendly name."""
+        hub_url = self._hub_url or self._existing_entry_value("hub_url")
+        if not hub_url:
+            return
+        try:
+            shades = await _fetch_shades_from_hub(self.hass, hub_url)
+            for hs in shades:
+                if hs.ble_name == self._device_name:
+                    self._device_name = hs.name
+                    break
+            if not self._hub_url:
+                self._hub_url = hub_url
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+            pass
 
     def _hub_name_for(self, ble_name: str) -> str | None:
         """Return the human-readable hub name for a BLE name, or None."""
@@ -334,24 +388,29 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ble_name = device.name
                 name = self._hub_name_for(ble_name) or ble_name
                 mfct_hex = device.discovery_info.manufacturer_data[MFCT_ID].hex()
+                entry_data: dict[str, str] = {
+                    "manufacturer_data": mfct_hex,
+                    CONF_HOME_KEY: self._home_key,
+                }
+                if self._hub_url:
+                    entry_data["hub_url"] = self._hub_url
                 entries.append(
                     {
                         "address": address,
                         "name": name,
-                        "data": {
-                            "manufacturer_data": mfct_hex,
-                            CONF_HOME_KEY: self._home_key,
-                        },
+                        "data": entry_data,
                     }
                 )
 
             # Kick off auto-add flows for all but the last shade
-            for info in entries[:-1]:
-                await self.hass.config_entries.flow.async_init(
+            await asyncio.gather(*(
+                self.hass.config_entries.flow.async_init(
                     DOMAIN,
                     context={"source": "auto_add"},
                     data=info,
                 )
+                for info in entries[:-1]
+            ))
 
             # Create the final entry normally (ends this flow)
             last = entries[-1]
@@ -399,12 +458,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_auto_add(
-        self, data: dict[str, Any]
+        self, user_input: dict[str, Any]
     ) -> ConfigFlowResult:
         """Create a config entry for a shade selected via multi-select."""
-        await self.async_set_unique_id(data["address"])
+        await self.async_set_unique_id(user_input["address"])
         self._abort_if_unique_id_configured()
-        return self.async_create_entry(title=data["name"], data=data["data"])
+        return self.async_create_entry(
+            title=user_input["name"], data=user_input["data"]
+        )
 
     async def async_step_manual(
         self, user_input: dict[str, Any] | None = None
@@ -440,75 +501,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            method = user_input.get("key_method", "skip")
-
-            if method == "skip":
-                self._home_key = ""
+            if await self._validate_homekey_input(user_input, errors):
                 return await self.async_step_select_device()
-
-            elif method == "manual":
-                raw = user_input.get("home_key", "").strip()
-                # Accept \xNN\xNN... format (e.g. from ESP32 emulator serial log)
-                if "\\x" in raw:
-                    raw = raw.replace("\\x", "")
-                if len(raw) != 32:
-                    errors["home_key"] = "invalid_key_length"
-                else:
-                    try:
-                        bytes.fromhex(raw)
-                    except ValueError:
-                        errors["home_key"] = "invalid_key_format"
-                    else:
-                        self._home_key = raw.lower()
-                        return await self.async_step_select_device()
-
-            elif method == "hub":
-                hub_url = user_input.get("hub_url", "").rstrip("/")
-                try:
-                    key, hub_shades = await _fetch_key_and_shades_from_hub(
-                        self.hass, hub_url
-                    )
-                    self._home_key = key.hex()
-                    self._hub_shades = hub_shades
-                    return await self.async_step_select_device()
-                except aiohttp.ClientResponseError:
-                    errors["hub_url"] = "hub_http_error"
-                except aiohttp.ClientConnectionError:
-                    errors["hub_url"] = "hub_connection_error"
-                except (asyncio.TimeoutError, TimeoutError):
-                    errors["hub_url"] = "hub_timeout"
-                except ValueError:
-                    errors["hub_url"] = "hub_protocol_error"
 
         return self.async_show_form(
             step_id="homekey",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("key_method", default="hub"): SelectSelector(
-                        SelectSelectorConfig(
-                            options=[
-                                {
-                                    "value": "hub",
-                                    "label": "Fetch automatically from PowerView hub",
-                                },
-                                {
-                                    "value": "manual",
-                                    "label": "Enter key manually (32 hex characters)",
-                                },
-                                {
-                                    "value": "skip",
-                                    "label": "Skip (no key — controls disabled for encrypted shades)",
-                                },
-                            ]
-                        )
-                    ),
-                    vol.Optional("hub_url", default="http://powerview-g3.local"): TextSelector(
-                        TextSelectorConfig(type=TextSelectorType.URL)
-                    ),
-                    vol.Optional("home_key", default=""): TextSelector(
-                        TextSelectorConfig(type=TextSelectorType.TEXT)
-                    ),
-                }
-            ),
+            data_schema=_HOMEKEY_SCHEMA,
             errors=errors,
         )

@@ -62,7 +62,7 @@ class PowerViewCover(PassiveBluetoothCoordinatorEntity[PVCoordinator], CoverEnti
     ) -> None:
         """Initialize the shade."""
         LOGGER.debug("%s: init() PowerViewCover", coordinator.name)
-        self._attr_name = CoverDeviceClass.SHADE
+        self._attr_name = None
         self._coord: PVCoordinator = coordinator
         self._attr_device_info = self._coord.device_info
         self._target_position: int | None = round(

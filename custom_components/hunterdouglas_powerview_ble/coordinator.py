@@ -20,11 +20,13 @@ class PVCoordinator(PassiveBluetoothDataUpdateCoordinator):
     """Update coordinator for a battery management system."""
 
     def __init__(
-        self, hass: HomeAssistant, ble_device: BLEDevice, data: dict[str, Any]
+        self, hass: HomeAssistant, ble_device: BLEDevice, data: dict[str, Any],
+        friendly_name: str | None = None,
     ) -> None:
         """Initialize BMS data coordinator."""
         assert ble_device.name is not None
         self._mac = ble_device.address
+        self._friendly_name = friendly_name or ble_device.name
         home_key_hex: str = data.get(CONF_HOME_KEY, "")
         home_key: bytes = bytes.fromhex(home_key_hex) if len(home_key_hex) == 32 else b""
         self.api = PowerViewBLE(ble_device, home_key)
@@ -34,7 +36,7 @@ class PVCoordinator(PassiveBluetoothDataUpdateCoordinator):
 
         LOGGER.debug(
             "Initializing coordinator for %s (%s)",
-            ble_device.name,
+            self._friendly_name,
             ble_device.address,
         )
         super().__init__(
@@ -52,16 +54,15 @@ class PVCoordinator(PassiveBluetoothDataUpdateCoordinator):
     @property
     def device_info(self) -> DeviceInfo:
         """Return detailed device information for GUI."""
-        LOGGER.debug("%s: device_info, %s", self.name, self.dev_details)
+        LOGGER.debug("%s: device_info, %s", self._friendly_name, self.dev_details)
         return DeviceInfo(
             identifiers={
-                (DOMAIN, self.name),
+                (DOMAIN, self.address),
                 (BLUETOOTH_DOMAIN, self.address),
             },
             connections={(CONNECTION_BLUETOOTH, self.address)},
-            name=self.name,
+            name=self._friendly_name,
             configuration_url=None,
-            # properties used in GUI:
             manufacturer="Hunter Douglas",
             model=(
                 str(SHADE_TYPE.get(int(bytes.fromhex(self._manuf_dat)[2]), "unknown"))
@@ -94,9 +95,6 @@ class PVCoordinator(PassiveBluetoothDataUpdateCoordinator):
         change: bluetooth.BluetoothChange,
     ) -> None:
         """Handle a Bluetooth event."""
-
-        # if not self.dev_details:
-        #     self.hass.async_create_task(self._get_device_info())
 
         LOGGER.debug("BLE event %s: %s", change, service_info.manufacturer_data)
         self.api.set_ble_device(service_info.device)
