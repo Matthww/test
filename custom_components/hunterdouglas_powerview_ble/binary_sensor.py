@@ -40,7 +40,9 @@ async def async_setup_entry(
         )
 
 
-class PVBinarySensor(PassiveBluetoothCoordinatorEntity[PVCoordinator], BinarySensorEntity):  # type: ignore[reportIncompatibleMethodOverride]
+class PVBinarySensor(
+    PassiveBluetoothCoordinatorEntity[PVCoordinator], BinarySensorEntity
+):  # type: ignore[reportIncompatibleMethodOverride]
     """The generic PV binary sensor implementation."""
 
     def __init__(

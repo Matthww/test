@@ -34,9 +34,9 @@ async def async_setup_entry(
     """Set up the demo cover platform."""
 
     coordinator: PVCoordinator = config_entry.runtime_data
-    model: Final[str|None] = coordinator.dev_details.get("model")
+    model: Final[str | None] = coordinator.dev_details.get("model")
     entities: list[PowerViewCover] = []
-    if model in ["39"]:
+    if model == "39":
         entities.append(PowerViewCoverTiltOnly(coordinator))
     else:
         entities.append(PowerViewCover(coordinator))

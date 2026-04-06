@@ -61,7 +61,9 @@ def get_shade_key(hub: str, ble_name) -> bytes:
     response: Final[bytes] = bytes.fromhex(responses[0]["hex"])
     dec_resp: Final[dict[str, Any]] = decode_response(response)
     if dec_resp["errorCode"] != 0:
-        raise ValueError(f"BLE errorCode={dec_resp['errorCode']} data={dec_resp['data'].hex()}")
+        raise ValueError(
+            f"BLE errorCode={dec_resp['errorCode']} data={dec_resp['data'].hex()}"
+        )
     if len(dec_resp["data"]) != 16:
         raise ValueError("Expected 16 byte homekey")
     return dec_resp["data"]

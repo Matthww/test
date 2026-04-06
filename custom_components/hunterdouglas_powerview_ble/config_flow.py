@@ -2,8 +2,8 @@
 
 import asyncio
 import base64
-import struct
 from dataclasses import dataclass
+import struct
 from typing import Any
 
 import aiohttp
@@ -114,26 +114,26 @@ async def _fetch_key_and_shades_from_hub(
             ) as resp:
                 resp.raise_for_status()
                 result = await resp.json(content_type=None)
-
-            responses = result.get("responses", [])
-            if len(responses) != 1 or "hex" not in responses[0]:
-                continue
-
-            response_bytes = bytes.fromhex(responses[0]["hex"])
-            if len(response_bytes) < 5:
-                continue
-            _s, _c, _q, length = struct.unpack("<BBBB", response_bytes[0:4])
-            if len(response_bytes) != 4 + length:
-                continue
-            if response_bytes[4] != 0:
-                continue
-            key_data = response_bytes[5:]
-            if len(key_data) != 16:
-                continue
-            return key_data, hub_shades
-        except (aiohttp.ClientError, asyncio.TimeoutError) as ex:
+        except (TimeoutError, aiohttp.ClientError) as ex:
             last_error = ex
             continue
+
+        responses = result.get("responses", [])
+        if len(responses) != 1 or "hex" not in responses[0]:
+            continue
+
+        response_bytes = bytes.fromhex(responses[0]["hex"])
+        if len(response_bytes) < 5:
+            continue
+        _s, _c, _q, length = struct.unpack("<BBBB", response_bytes[0:4])
+        if len(response_bytes) != 4 + length:
+            continue
+        if response_bytes[4] != 0:
+            continue
+        key_data = response_bytes[5:]
+        if len(key_data) != 16:
+            continue
+        return key_data, hub_shades
 
     raise ValueError(f"No reachable shade returned a valid key: {last_error}")
 
@@ -205,6 +205,27 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data=data,
         )
 
+    def _validate_manual_key(
+        self, user_input: dict[str, Any], errors: dict[str, str]
+    ) -> bool:
+        """Validate a manually entered hex key and store it.
+
+        Returns True on success, False on validation error.
+        """
+        raw = user_input.get("home_key", "").strip()
+        if "\\x" in raw:
+            raw = raw.replace("\\x", "")
+        if len(raw) != 32:
+            errors["home_key"] = "invalid_key_length"
+            return False
+        try:
+            bytes.fromhex(raw)
+        except ValueError:
+            errors["home_key"] = "invalid_key_format"
+            return False
+        self._home_key = raw.lower()
+        return True
+
     async def _validate_homekey_input(
         self, user_input: dict[str, Any], errors: dict[str, str]
     ) -> bool:
@@ -220,40 +241,28 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return True
 
         if method == "manual":
-            raw = user_input.get("home_key", "").strip()
-            if "\\x" in raw:
-                raw = raw.replace("\\x", "")
-            if len(raw) != 32:
-                errors["home_key"] = "invalid_key_length"
-                return False
-            try:
-                bytes.fromhex(raw)
-            except ValueError:
-                errors["home_key"] = "invalid_key_format"
-                return False
-            self._home_key = raw.lower()
-            return True
+            return self._validate_manual_key(user_input, errors)
 
-        if method == "hub":
-            hub_url = user_input.get("hub_url", "").rstrip("/")
-            try:
-                key, hub_shades = await _fetch_key_and_shades_from_hub(
-                    self.hass, hub_url
-                )
-                self._home_key = key.hex()
-                self._hub_url = hub_url
-                self._hub_shades = hub_shades
-                return True
-            except aiohttp.ClientResponseError:
-                errors["hub_url"] = "hub_http_error"
-            except aiohttp.ClientConnectionError:
-                errors["hub_url"] = "hub_connection_error"
-            except (asyncio.TimeoutError, TimeoutError):
-                errors["hub_url"] = "hub_timeout"
-            except ValueError:
-                errors["hub_url"] = "hub_protocol_error"
+        if method != "hub":
+            return False
 
-        return False
+        hub_url = user_input.get("hub_url", "").rstrip("/")
+        _HUB_ERROR_MAP: dict[type[Exception], str] = {
+            aiohttp.ClientResponseError: "hub_http_error",
+            aiohttp.ClientConnectionError: "hub_connection_error",
+            TimeoutError: "hub_timeout",
+            ValueError: "hub_protocol_error",
+        }
+        try:
+            key, hub_shades = await _fetch_key_and_shades_from_hub(self.hass, hub_url)
+        except tuple(_HUB_ERROR_MAP) as ex:
+            errors["hub_url"] = _HUB_ERROR_MAP[type(ex)]
+            return False
+
+        self._home_key = key.hex()
+        self._hub_url = hub_url
+        self._hub_shades = hub_shades
+        return True
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
@@ -310,13 +319,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         errors: dict[str, str] = {}
 
-        if user_input is not None:
-            if await self._validate_homekey_input(user_input, errors):
-                # Use hub name for the entry title if available
-                friendly = self._hub_name_for(self._device_name)
-                if friendly:
-                    self._device_name = friendly
-                return self._create_entry()
+        if user_input is not None and await self._validate_homekey_input(
+            user_input, errors
+        ):
+            # Use hub name for the entry title if available
+            friendly = self._hub_name_for(self._device_name)
+            if friendly:
+                self._device_name = friendly
+            return self._create_entry()
 
         return self.async_show_form(
             step_id="homekey_bluetooth",
@@ -349,7 +359,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     break
             if not self._hub_url:
                 self._hub_url = hub_url
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+        except (TimeoutError, aiohttp.ClientError, ValueError):
             pass
 
     def _hub_name_for(self, ble_name: str) -> str | None:
@@ -370,6 +380,35 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.async_step_select_device()
         return await self.async_step_homekey()
 
+    def _build_selected_entries(
+        self, user_input: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Build config entry data for each selected shade address."""
+        addresses: list[str] = user_input[CONF_ADDRESS]
+        if isinstance(addresses, str):
+            addresses = [addresses]
+
+        entries: list[dict[str, Any]] = []
+        for address in addresses:
+            device = self._discovered_devices[address]
+            ble_name = device.name
+            name = self._hub_name_for(ble_name) or ble_name
+            mfct_hex = device.discovery_info.manufacturer_data[MFCT_ID].hex()
+            entry_data: dict[str, str] = {
+                "manufacturer_data": mfct_hex,
+                CONF_HOME_KEY: self._home_key,
+            }
+            if self._hub_url:
+                entry_data["hub_url"] = self._hub_url
+            entries.append(
+                {
+                    "address": address,
+                    "name": name,
+                    "data": entry_data,
+                }
+            )
+        return entries
+
     async def async_step_select_device(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -377,40 +416,19 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         LOGGER.debug("select_device step")
 
         if user_input is not None:
-            addresses: list[str] = user_input[CONF_ADDRESS]
-            if isinstance(addresses, str):
-                addresses = [addresses]
-
-            # Build entry info for every selected shade
-            entries: list[dict[str, Any]] = []
-            for address in addresses:
-                device = self._discovered_devices[address]
-                ble_name = device.name
-                name = self._hub_name_for(ble_name) or ble_name
-                mfct_hex = device.discovery_info.manufacturer_data[MFCT_ID].hex()
-                entry_data: dict[str, str] = {
-                    "manufacturer_data": mfct_hex,
-                    CONF_HOME_KEY: self._home_key,
-                }
-                if self._hub_url:
-                    entry_data["hub_url"] = self._hub_url
-                entries.append(
-                    {
-                        "address": address,
-                        "name": name,
-                        "data": entry_data,
-                    }
-                )
+            entries = self._build_selected_entries(user_input)
 
             # Kick off auto-add flows for all but the last shade
-            await asyncio.gather(*(
-                self.hass.config_entries.flow.async_init(
-                    DOMAIN,
-                    context={"source": "auto_add"},
-                    data=info,
+            await asyncio.gather(
+                *(
+                    self.hass.config_entries.flow.async_init(
+                        DOMAIN,
+                        context={"source": "auto_add"},
+                        data=info,
+                    )
+                    for info in entries[:-1]
                 )
-                for info in entries[:-1]
-            ))
+            )
 
             # Create the final entry normally (ends this flow)
             last = entries[-1]
@@ -518,9 +536,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Configure homekey — collected before device selection."""
         errors: dict[str, str] = {}
 
-        if user_input is not None:
-            if await self._validate_homekey_input(user_input, errors):
-                return await self.async_step_select_device()
+        if user_input is not None and await self._validate_homekey_input(
+            user_input, errors
+        ):
+            return await self.async_step_select_device()
 
         return self.async_show_form(
             step_id="homekey",

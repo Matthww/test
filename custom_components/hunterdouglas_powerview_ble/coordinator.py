@@ -20,7 +20,10 @@ class PVCoordinator(PassiveBluetoothDataUpdateCoordinator):
     """Update coordinator for a battery management system."""
 
     def __init__(
-        self, hass: HomeAssistant, ble_device: BLEDevice, data: dict[str, Any],
+        self,
+        hass: HomeAssistant,
+        ble_device: BLEDevice,
+        data: dict[str, Any],
         friendly_name: str | None = None,
     ) -> None:
         """Initialize BMS data coordinator."""
@@ -28,7 +31,9 @@ class PVCoordinator(PassiveBluetoothDataUpdateCoordinator):
         self._mac = ble_device.address
         self._friendly_name = friendly_name or ble_device.name
         home_key_hex: str = data.get(CONF_HOME_KEY, "")
-        home_key: bytes = bytes.fromhex(home_key_hex) if len(home_key_hex) == 32 else b""
+        home_key: bytes = (
+            bytes.fromhex(home_key_hex) if len(home_key_hex) == 32 else b""
+        )
         self.api = PowerViewBLE(ble_device, home_key)
         self.data: dict[str, int | float | bool] = {}
         self._manuf_dat = data.get("manufacturer_data")
