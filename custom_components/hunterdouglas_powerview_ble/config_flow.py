@@ -144,18 +144,18 @@ _HOMEKEY_SCHEMA = vol.Schema(
         vol.Required("key_method", default="hub"): SelectSelector(
             SelectSelectorConfig(
                 options=[
-                    {
-                        "value": "hub",
-                        "label": "Fetch automatically from PowerView hub",
-                    },
-                    {
-                        "value": "manual",
-                        "label": "Enter key manually (32 hex characters)",
-                    },
-                    {
-                        "value": "skip",
-                        "label": "Skip (no key — controls disabled for encrypted shades)",
-                    },
+                    SelectOptionDict(
+                        value="hub",
+                        label="Fetch automatically from PowerView hub",
+                    ),
+                    SelectOptionDict(
+                        value="manual",
+                        label="Enter key manually (32 hex characters)",
+                    ),
+                    SelectOptionDict(
+                        value="skip",
+                        label="Skip (no key — controls disabled for encrypted shades)",
+                    ),
                 ]
             )
         ),
@@ -333,7 +333,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="homekey_bluetooth",
             data_schema=_HOMEKEY_SCHEMA,
             errors=errors,
-            description_placeholders={"name": self._device_name},
+            description_placeholders={
+                "name": self._device_name,
+                "hub_url_example": "http://powerview-g3.local",
+            },
         )
 
     def _existing_entry_value(self, key: str) -> str:
@@ -557,4 +560,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="homekey",
             data_schema=_HOMEKEY_SCHEMA,
             errors=errors,
+            description_placeholders={
+                "hub_url_example": "http://powerview-g3.local",
+            },
         )
