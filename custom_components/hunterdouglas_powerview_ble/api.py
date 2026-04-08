@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from enum import Enum
 import time
-from typing import Final
+from typing import Final, NamedTuple
 
 from bleak import BleakClient
 from bleak.backends.device import BLEDevice
@@ -57,6 +57,31 @@ SHADE_TYPE: Final[dict[int, str]] = {
     51: "Venetian, Tilt Anywhere",
     62: "Venetian, Tilt Anywhere",
 }
+
+class ShadeCapability(NamedTuple):
+    """Capability flags for a shade type."""
+
+    has_tilt: bool = False
+    tilt_only: bool = False
+
+
+SHADE_CAPABILITIES: Final[dict[int, ShadeCapability]] = {
+    # tilt anywhere (position + tilt)
+    51: ShadeCapability(has_tilt=True),
+    62: ShadeCapability(has_tilt=True),
+    # tilt only (no position movement)
+    39: ShadeCapability(has_tilt=True, tilt_only=True),
+}
+
+_DEFAULT_CAPABILITY: Final[ShadeCapability] = ShadeCapability()
+
+
+def get_shade_capabilities(type_id: int | None) -> ShadeCapability:
+    """Return shade capabilities for a given type_id."""
+    if type_id is None:
+        return _DEFAULT_CAPABILITY
+    return SHADE_CAPABILITIES.get(type_id, _DEFAULT_CAPABILITY)
+
 
 OPEN_POSITION: Final[int] = 100
 CLOSED_POSITION: Final[int] = 0
@@ -237,20 +262,20 @@ class PowerViewBLE:
             disconnect,
         )
 
-    async def open(self) -> None:
+    async def open(self, velocity: int = 0x0) -> None:
         """Fully open cover."""
         LOGGER.debug("%s open", self.name)
-        await self.set_position(OPEN_POSITION, disconnect=False)
+        await self.set_position(OPEN_POSITION, velocity=velocity, disconnect=False)
 
     async def stop(self) -> None:
         """Stop device movement."""
         LOGGER.debug("%s stop", self.name)
         await self._cmd((ShadeCmd.STOP, b""))
 
-    async def close(self) -> None:
+    async def close(self, velocity: int = 0x0) -> None:
         """Fully close cover."""
         LOGGER.debug("%s close", self.name)
-        await self.set_position(CLOSED_POSITION, disconnect=False)
+        await self.set_position(CLOSED_POSITION, velocity=velocity, disconnect=False)
 
     # uint8_t scene#, uint8_t unknown
     # open: scene 2

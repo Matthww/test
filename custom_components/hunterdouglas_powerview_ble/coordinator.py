@@ -12,7 +12,7 @@ from homeassistant.components.bluetooth.passive_update_coordinator import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
 
-from .api import SHADE_TYPE, PowerViewBLE
+from .api import SHADE_TYPE, ShadeCapability, PowerViewBLE, get_shade_capabilities
 from .const import ATTR_RSSI, CONF_HOME_KEY, DOMAIN, LOGGER
 
 
@@ -38,6 +38,7 @@ class PVCoordinator(PassiveBluetoothDataUpdateCoordinator):
         self.data: dict[str, int | float | bool] = {}
         self._manuf_dat = data.get("manufacturer_data")
         self.dev_details: dict[str, str] = {}
+        self.velocity: int = 0
 
         LOGGER.debug(
             "Initializing coordinator for %s (%s)",
@@ -50,6 +51,18 @@ class PVCoordinator(PassiveBluetoothDataUpdateCoordinator):
             ble_device.address,
             bluetooth.BluetoothScanningMode.ACTIVE,
         )
+
+    @property
+    def type_id(self) -> int | None:
+        """Return the shade type ID from manufacturer data."""
+        if self._manuf_dat:
+            return int(bytes.fromhex(self._manuf_dat)[2])
+        return None
+
+    @property
+    def shade_capabilities(self) -> ShadeCapability:
+        """Return the shade capabilities based on type ID."""
+        return get_shade_capabilities(self.type_id)
 
     async def query_dev_info(self) -> None:
         """Receive detailed information from device."""
@@ -70,12 +83,12 @@ class PVCoordinator(PassiveBluetoothDataUpdateCoordinator):
             configuration_url=None,
             manufacturer="Hunter Douglas",
             model=(
-                str(SHADE_TYPE.get(int(bytes.fromhex(self._manuf_dat)[2]), "unknown"))
-                if self._manuf_dat
+                str(SHADE_TYPE.get(self.type_id, "unknown"))
+                if self.type_id is not None
                 else None
             ),
             model_id=(
-                str(bytes.fromhex(self._manuf_dat)[2]) if self._manuf_dat else None
+                str(self.type_id) if self.type_id is not None else None
             ),
             serial_number=self.dev_details.get("serial_nr"),
             sw_version=self.dev_details.get("sw_rev"),

@@ -18,7 +18,7 @@ from homeassistant.components.cover import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo, format_mac
+from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import CLOSED_POSITION, OPEN_POSITION
@@ -31,15 +31,17 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the demo cover platform."""
+    """Set up the cover platform."""
 
     coordinator: PVCoordinator = config_entry.runtime_data
-    model: Final[str | None] = coordinator.dev_details.get("model")
-    entities: list[PowerViewCover] = []
-    if model == "39":
-        entities.append(PowerViewCoverTiltOnly(coordinator))
+    caps = coordinator.shade_capabilities
+
+    if caps.tilt_only:
+        entities: list[PowerViewCover] = [PowerViewCoverTiltOnly(coordinator)]
+    elif caps.has_tilt:
+        entities = [PowerViewCoverTilt(coordinator)]
     else:
-        entities.append(PowerViewCover(coordinator))
+        entities = [PowerViewCover(coordinator)]
 
     async_add_entities(entities)
 
@@ -72,11 +74,6 @@ class PowerViewCover(PassiveBluetoothCoordinatorEntity[PVCoordinator], CoverEnti
             f"{DOMAIN}_{format_mac(self._coord.address)}_{CoverDeviceClass.SHADE}"
         )
         super().__init__(coordinator)
-
-    @property
-    def device_info(self) -> DeviceInfo:  # type: ignore[reportIncompatibleVariableOverride]
-        """Return the device_info of the device."""
-        return self._coord.device_info
 
     @property
     def is_opening(self) -> bool | None:  # type: ignore[reportIncompatibleVariableOverride]
@@ -133,7 +130,10 @@ class PowerViewCover(PassiveBluetoothCoordinatorEntity[PVCoordinator], CoverEnti
                 return
             self._target_position = round(target_position)
             try:
-                await self._coord.api.set_position(round(target_position))
+                await self._coord.api.set_position(
+                    round(target_position),
+                    velocity=self._coord.velocity,
+                )
                 self.async_write_ha_state()
             except BleakError as err:
                 LOGGER.error(
@@ -153,7 +153,7 @@ class PowerViewCover(PassiveBluetoothCoordinatorEntity[PVCoordinator], CoverEnti
             return
         try:
             self._target_position = OPEN_POSITION
-            await self._coord.api.open()
+            await self._coord.api.open(velocity=self._coord.velocity)
             self.async_write_ha_state()
         except BleakError as err:
             LOGGER.error("Failed to open cover '%s': %s", self.name, err)
@@ -166,7 +166,7 @@ class PowerViewCover(PassiveBluetoothCoordinatorEntity[PVCoordinator], CoverEnti
             return
         try:
             self._target_position = CLOSED_POSITION
-            await self._coord.api.close()
+            await self._coord.api.close(velocity=self._coord.velocity)
             self.async_write_ha_state()
         except BleakError as err:
             LOGGER.error("Failed to close cover '%s': %s", self.name, err)
@@ -227,7 +227,9 @@ class PowerViewCoverTilt(PowerViewCover):
 
             try:
                 await self._coord.api.set_position(
-                    self.current_cover_position, tilt=target_position
+                    self.current_cover_position,
+                    tilt=target_position,
+                    velocity=self._coord.velocity,
                 )
                 self.async_write_ha_state()
             except BleakError as err:

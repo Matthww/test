@@ -18,9 +18,10 @@ from .coordinator import PVCoordinator
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
-    Platform.COVER,
-    Platform.SENSOR,
     Platform.BUTTON,
+    Platform.COVER,
+    Platform.NUMBER,
+    Platform.SENSOR,
 ]
 
 type ConfigEntryType = ConfigEntry[PVCoordinator]
