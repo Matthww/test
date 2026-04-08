@@ -12,7 +12,7 @@ from homeassistant.components.bluetooth.passive_update_coordinator import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
 
-from .api import SHADE_TYPE, ShadeCapability, PowerViewBLE, get_shade_capabilities
+from .api import SHADE_TYPE, PowerViewBLE, ShadeCapability, get_shade_capabilities
 from .const import ATTR_RSSI, CONF_HOME_KEY, DOMAIN, LOGGER
 
 
