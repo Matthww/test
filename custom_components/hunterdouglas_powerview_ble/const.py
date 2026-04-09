@@ -9,6 +9,10 @@ MFCT_ID: Final[int] = 2073
 TIMEOUT: Final[int] = 5
 
 CONF_HOME_KEY: Final[str] = "home_key"
+CONF_HUB_URL: Final[str] = "hub_url"
+
+# dispatcher signal for newly discovered shades (format with entry_id)
+SIGNAL_NEW_SHADE: Final[str] = f"{DOMAIN}_new_shade_{{entry_id}}"
 
 # attributes (do not change)
 ATTR_RSSI: Final[str] = "rssi"

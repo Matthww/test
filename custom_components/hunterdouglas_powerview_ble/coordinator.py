@@ -54,10 +54,11 @@ class PVCoordinator(PassiveBluetoothDataUpdateCoordinator):
 
     @property
     def type_id(self) -> int | None:
-        """Return the shade type ID from manufacturer data."""
+        """Return the shade type ID from manufacturer data or live BLE data."""
         if self._manuf_dat:
             return int(bytes.fromhex(self._manuf_dat)[2])
-        return None
+        live = self.data.get("type_id")
+        return int(live) if live is not None else None
 
     @property
     def shade_capabilities(self) -> ShadeCapability:

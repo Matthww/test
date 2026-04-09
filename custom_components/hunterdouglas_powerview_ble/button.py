@@ -10,12 +10,12 @@ from homeassistant.components.button import (
     ButtonEntity,
     ButtonEntityDescription,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo, format_mac
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from . import ConfigEntryType, async_setup_shade_platform
 from .const import DOMAIN, LOGGER
 from .coordinator import PVCoordinator
 
@@ -28,16 +28,22 @@ BUTTONS_SHADE: Final = [
 ]
 
 
+def _add_entities(
+    coordinator: PVCoordinator, async_add_entities: AddEntitiesCallback
+) -> None:
+    """Create button entities for a single shade coordinator."""
+    async_add_entities(
+        [PowerViewButton(coordinator, descr) for descr in BUTTONS_SHADE]
+    )
+
+
 async def async_setup_entry(
-    _hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    hass: HomeAssistant,
+    config_entry: ConfigEntryType,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the demo cover platform."""
-
-    coordinator: PVCoordinator = config_entry.runtime_data
-    for descr in BUTTONS_SHADE:
-        async_add_entities([PowerViewButton(coordinator, descr)])
+    """Set up the button platform."""
+    async_setup_shade_platform(hass, config_entry, async_add_entities, _add_entities)
 
 
 class PowerViewButton(PassiveBluetoothCoordinatorEntity[PVCoordinator], ButtonEntity):  # type: ignore[reportIncompatibleVariableOverride]

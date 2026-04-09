@@ -15,7 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import ConfigEntryType
+from . import ConfigEntryType, async_setup_shade_platform
 from .const import ATTR_RSSI, DOMAIN
 from .coordinator import PVCoordinator
 
@@ -39,18 +39,25 @@ SENSOR_TYPES: list[SensorEntityDescription] = [
 ]
 
 
+def _add_entities(
+    coordinator: PVCoordinator, async_add_entities: AddEntitiesCallback
+) -> None:
+    """Create sensor entities for a single shade coordinator."""
+    async_add_entities(
+        [
+            PVSensor(coordinator, descr, format_mac(coordinator.address))
+            for descr in SENSOR_TYPES
+        ]
+    )
+
+
 async def async_setup_entry(
-    _hass: HomeAssistant,
+    hass: HomeAssistant,
     config_entry: ConfigEntryType,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Add sensors for passed config_entry in Home Assistant."""
-
-    pv_dev: PVCoordinator = config_entry.runtime_data
-    for descr in SENSOR_TYPES:
-        async_add_entities(
-            [PVSensor(pv_dev, descr, format_mac(config_entry.unique_id))]
-        )
+    async_setup_shade_platform(hass, config_entry, async_add_entities, _add_entities)
 
 
 class PVSensor(PassiveBluetoothCoordinatorEntity[PVCoordinator], SensorEntity):  # type: ignore[reportIncompatibleMethodOverride]

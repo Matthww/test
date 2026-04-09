@@ -9,20 +9,25 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import ConfigEntryType
+from . import ConfigEntryType, async_setup_shade_platform
 from .const import DOMAIN, LOGGER
 from .coordinator import PVCoordinator
 
 
+def _add_entities(
+    coordinator: PVCoordinator, async_add_entities: AddEntitiesCallback
+) -> None:
+    """Create velocity number entity for a single shade coordinator."""
+    async_add_entities([PowerViewVelocity(coordinator)])
+
+
 async def async_setup_entry(
-    _hass: HomeAssistant,
+    hass: HomeAssistant,
     config_entry: ConfigEntryType,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the velocity number entity."""
-
-    coordinator: PVCoordinator = config_entry.runtime_data
-    async_add_entities([PowerViewVelocity(coordinator)])
+    async_setup_shade_platform(hass, config_entry, async_add_entities, _add_entities)
 
 
 class PowerViewVelocity(

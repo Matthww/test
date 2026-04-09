@@ -1,24 +1,10 @@
 {
   "config": {
-    "flow_title": "Setup {name}",
+    "flow_title": "PowerView Home Setup",
     "step": {
       "user": {
-        "title": "Add PowerView Shade",
-        "menu_options": {
-          "select_device": "Select from discovered shades",
-          "manual": "Enter device details manually"
-        },
-        "menu_option_descriptions": {
-          "select_device": "Choose from shades detected via Bluetooth nearby.",
-          "manual": "Enter a Bluetooth MAC address and device name directly, for example if a shade is out of range of discovery."
-        }
-      },
-      "bluetooth_confirm": {
-        "description": "[%key:component::bluetooth::config::step::bluetooth_confirm::description%]"
-      },
-      "homekey": {
-        "title": "Configure HomeKey",
-        "description": "All shades on a PowerView network share the same encryption key. The recommended method is to fetch it from your G3 hub. You can also enter the key manually, or skip if your shades are unencrypted.",
+        "title": "Set up PowerView Home",
+        "description": "Configure your PowerView encryption key. All shades on your network will be discovered automatically via Bluetooth.",
         "data": {
           "key_method": "Key source",
           "hub_url": "PowerView hub URL",
@@ -27,37 +13,6 @@
         "data_description": {
           "hub_url": "Base URL of your PowerView G3 hub, e.g. {hub_url_example}",
           "home_key": "32-character hex string (e.g. 0102030405060708090a0b0c0d0e0f10) or \\x escaped format (e.g. \\x01\\x02...)"
-        }
-      },
-      "homekey_bluetooth": {
-        "title": "Configure HomeKey for {name}",
-        "description": "This shade uses encryption. The recommended method is to fetch the key from your G3 hub. You can also enter it manually, or skip (controls will be disabled until a key is configured).",
-        "data": {
-          "key_method": "Key source",
-          "hub_url": "PowerView hub URL",
-          "home_key": "HomeKey (32 hex characters or \\xNN format)"
-        },
-        "data_description": {
-          "hub_url": "Base URL of your PowerView G3 hub, e.g. {hub_url_example}",
-          "home_key": "32-character hex string (e.g. 0102030405060708090a0b0c0d0e0f10) or \\x escaped format (e.g. \\x01\\x02...)"
-        }
-      },
-      "auto_add_confirm": {
-        "description": "Do you want to set up {name}?"
-      },
-      "select_device": {
-        "title": "Select Shades",
-        "description": "Select the PowerView shades to add via Bluetooth.",
-        "data": {
-          "address": "Shades"
-        }
-      },
-      "manual": {
-        "title": "Enter Device Details",
-        "description": "Enter the device details manually.",
-        "data": {
-          "address": "Bluetooth MAC address (e.g. AA:BB:CC:DD:EE:FF)",
-          "ble_name": "BLE device name (e.g. DUE:94ED)"
         }
       }
     },
@@ -71,8 +26,7 @@
     },
     "abort": {
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
-      "no_devices_found": "[%key:common::config_flow::abort::no_devices_found%]",
-      "not_supported": "Device not supported"
+      "single_instance_allowed": "[%key:common::config_flow::abort::single_instance_allowed%]"
     }
   }
 }

@@ -16,24 +16,20 @@ from homeassistant.components.cover import (
     CoverEntity,
     CoverEntityFeature,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from . import ConfigEntryType, async_setup_shade_platform
 from .api import CLOSED_POSITION, OPEN_POSITION
 from .const import DOMAIN, LOGGER
 from .coordinator import PVCoordinator
 
 
-async def async_setup_entry(
-    _hass: HomeAssistant,
-    config_entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+def _add_entities(
+    coordinator: PVCoordinator, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Set up the cover platform."""
-
-    coordinator: PVCoordinator = config_entry.runtime_data
+    """Create cover entities for a single shade coordinator."""
     caps = coordinator.shade_capabilities
 
     if caps.tilt_only:
@@ -44,6 +40,15 @@ async def async_setup_entry(
         entities = [PowerViewCover(coordinator)]
 
     async_add_entities(entities)
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    config_entry: ConfigEntryType,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up the cover platform."""
+    async_setup_shade_platform(hass, config_entry, async_add_entities, _add_entities)
 
 
 class PowerViewCover(PassiveBluetoothCoordinatorEntity[PVCoordinator], CoverEntity):  # type: ignore[reportIncompatibleVariableOverride]
