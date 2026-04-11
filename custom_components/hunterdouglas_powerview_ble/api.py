@@ -63,6 +63,9 @@ class ShadeCapability(NamedTuple):
 
     has_tilt: bool = False
     tilt_only: bool = False
+    is_top_down: bool = False  # position logic is inverted (SkyLift style)
+    is_tdbu: bool = False  # dual-rail Top Down Bottom Up (needs two entities)
+    is_duolite: bool = False  # dual-fabric sheer+opaque (needs three entities)
 
 
 SHADE_CAPABILITIES: Final[dict[int, ShadeCapability]] = {
@@ -71,6 +74,14 @@ SHADE_CAPABILITIES: Final[dict[int, ShadeCapability]] = {
     62: ShadeCapability(has_tilt=True),
     # tilt only (no position movement)
     39: ShadeCapability(has_tilt=True, tilt_only=True),
+    # top-down only (inverted position: 100 = fully raised, 0 = fully lowered)
+    10: ShadeCapability(is_top_down=True),
+    # dual-rail top-down/bottom-up (two independent rails → two entities)
+    8: ShadeCapability(is_tdbu=True),
+    33: ShadeCapability(is_tdbu=True),
+    47: ShadeCapability(is_tdbu=True),
+    # duolite top-down/bottom-up (sheer front + opaque rear → three entities)
+    9: ShadeCapability(is_tdbu=True, is_duolite=True),
 }
 
 _DEFAULT_CAPABILITY: Final[ShadeCapability] = ShadeCapability()
