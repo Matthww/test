@@ -12,7 +12,7 @@ from homeassistant.components.button import (
 )
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo, format_mac
+from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import ConfigEntryType, async_setup_shade_platform
@@ -50,7 +50,6 @@ class PowerViewButton(PassiveBluetoothCoordinatorEntity[PVCoordinator], ButtonEn
     """Representation of a powerview shade."""
 
     _attr_has_entity_name = True
-    _attr_device_class = ButtonDeviceClass.IDENTIFY
 
     def __init__(
         self,
@@ -65,11 +64,6 @@ class PowerViewButton(PassiveBluetoothCoordinatorEntity[PVCoordinator], ButtonEn
             f"{DOMAIN}_{format_mac(self._coord.address)}_{ButtonDeviceClass.IDENTIFY}"
         )
         super().__init__(coordinator)
-
-    @property
-    def device_info(self) -> DeviceInfo:  # type: ignore[reportIncompatibleVariableOverride]
-        """Return the device_info of the device."""
-        return self._coord.device_info
 
     async def async_press(self) -> None:
         """Handle the button press."""

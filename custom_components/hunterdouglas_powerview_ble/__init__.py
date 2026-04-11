@@ -200,8 +200,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntryType) -> boo
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        for coordinator in entry.runtime_data.values():
-            coordinator._async_stop()  # noqa: SLF001
         entry.runtime_data.clear()
 
     LOGGER.debug("Unloaded config entry: %s, ok? %s!", entry.unique_id, str(unload_ok))

@@ -249,7 +249,7 @@ class PowerViewCoverTilt(PowerViewCover):
 
     async def async_stop_cover_tilt(self, **kwargs: Any) -> None:
         """Stop the cover."""
-        await self.async_stop_cover(kwargs=kwargs)
+        await self.async_stop_cover(**kwargs)
 
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
         """Open the cover tilt."""

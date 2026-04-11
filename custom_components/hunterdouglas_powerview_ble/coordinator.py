@@ -28,7 +28,6 @@ class PVCoordinator(PassiveBluetoothDataUpdateCoordinator):
     ) -> None:
         """Initialize BMS data coordinator."""
         assert ble_device.name is not None
-        self._mac = ble_device.address
         self._friendly_name = friendly_name or ble_device.name
         home_key_hex: str = data.get(CONF_HOME_KEY, "")
         home_key: bytes = (
@@ -99,7 +98,7 @@ class PVCoordinator(PassiveBluetoothDataUpdateCoordinator):
     @property
     def device_present(self) -> bool:
         """Check if a device is present."""
-        return bluetooth.async_address_present(self.hass, self._mac, connectable=True)
+        return bluetooth.async_address_present(self.hass, self.address, connectable=True)
 
     def _async_stop(self) -> None:
         """Shutdown coordinator and any connection."""
@@ -117,14 +116,17 @@ class PVCoordinator(PassiveBluetoothDataUpdateCoordinator):
 
         LOGGER.debug("BLE event %s: %s", change, service_info.manufacturer_data)
         self.api.set_ble_device(service_info.device)
-        self.data = {ATTR_RSSI: service_info.rssi}
+        new_data: dict[str, int | float | bool] = {ATTR_RSSI: service_info.rssi}
         if change == bluetooth.BluetoothChange.ADVERTISEMENT:
-            self.data.update(
+            new_data.update(
                 self.api.dec_manufacturer_data(
                     bytearray(service_info.manufacturer_data.get(2073, b""))
                 )
             )
-            self.api.encrypted = bool(self.data.get("home_id"))
+            self.api.encrypted = bool(new_data.get("home_id"))
 
+        if new_data == self.data:
+            return
+        self.data = new_data
         LOGGER.debug("data sample %s", self.data)
         super()._async_handle_bluetooth_event(service_info, change)

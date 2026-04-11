@@ -219,27 +219,27 @@ class PowerViewBLE:
                 raise
 
     @staticmethod
-    def dec_manufacturer_data(data: bytearray) -> list[tuple[str, float]]:
+    def dec_manufacturer_data(data: bytearray) -> dict[str, float | int | bool]:
         """Decode manufacturer data from BLE advertisement V2."""
         if len(data) != 9:
             LOGGER.debug("not a V2 record!")
-            return []
+            return {}
         pos: Final[int] = int.from_bytes(data[3:5], byteorder="little")
         pos2: Final[int] = (int(data[5]) << 4) + (int(data[4]) >> 4)
-        return [
-            (ATTR_CURRENT_POSITION, ((pos >> 2) / 10)),
-            ("position2", pos2 >> 2),
-            ("position3", int(data[6])),
-            (ATTR_CURRENT_TILT_POSITION, int(data[7])),
-            ("home_id", int.from_bytes(data[0:2], byteorder="little")),
-            ("type_id", int(data[2])),
-            ("is_opening", bool(pos & 0x3 == 0x2)),
-            ("is_closing", bool(pos & 0x3 == 0x1)),
-            ("battery_charging", bool(pos & 0x3 == 0x3)),  # observed
-            ("battery_level", POWER_LEVELS[(data[8] >> 6)]),  # cannot hit 4
-            ("resetMode", bool(data[8] & 0x1)),
-            ("resetClock", bool(data[8] & 0x2)),
-        ]
+        return {
+            ATTR_CURRENT_POSITION: (pos >> 2) / 10,
+            "position2": pos2 >> 2,
+            "position3": int(data[6]),
+            ATTR_CURRENT_TILT_POSITION: int(data[7]),
+            "home_id": int.from_bytes(data[0:2], byteorder="little"),
+            "type_id": int(data[2]),
+            "is_opening": bool(pos & 0x3 == 0x2),
+            "is_closing": bool(pos & 0x3 == 0x1),
+            "battery_charging": bool(pos & 0x3 == 0x3),  # observed
+            "battery_level": POWER_LEVELS[(data[8] >> 6)],  # cannot hit 4
+            "resetMode": bool(data[8] & 0x1),
+            "resetClock": bool(data[8] & 0x2),
+        }
 
     # position cmd: uint16_t pos1, uint16_t pos2, uint16_t pos3, uint16_t tilt, uint8_t velocity
     async def set_position(
