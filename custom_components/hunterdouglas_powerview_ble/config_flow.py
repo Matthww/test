@@ -111,7 +111,10 @@ async def _fetch_key_from_hub(
     if not shades:
         raise ValueError("No shades found on the hub")
 
-    ble_names = [s.get("bleName", "") for s in shades if s.get("bleName")]
+    # Sort by signal strength (strongest first) — a stronger signal means the
+    # hub is more likely to have an active BLE connection to that shade.
+    shades.sort(key=lambda s: s.get("signalStrength", -100), reverse=True)
+    ble_names = [s["bleName"] for s in shades if s.get("bleName")]
     if not ble_names:
         raise ValueError("No BLE-capable shades found on the hub")
 
