@@ -53,8 +53,9 @@ SHADE_TYPE: Final[dict[int, str]] = {
     33: "Duette Architella, Top Down Bottom Up",
     39: "Parkland",
     47: "Pleated, Top Down Bottom Up",
-    # top down, tilt anywhere
+    # tilt anywhere (position + tilt)
     51: "Venetian, Tilt Anywhere",
+    54: "Vertical Blind, Tilt",
     62: "Venetian, Tilt Anywhere",
 }
 
@@ -71,6 +72,7 @@ class ShadeCapability(NamedTuple):
 SHADE_CAPABILITIES: Final[dict[int, ShadeCapability]] = {
     # tilt anywhere (position + tilt)
     51: ShadeCapability(has_tilt=True),
+    54: ShadeCapability(has_tilt=True),
     62: ShadeCapability(has_tilt=True),
     # tilt only (no position movement)
     39: ShadeCapability(has_tilt=True, tilt_only=True),

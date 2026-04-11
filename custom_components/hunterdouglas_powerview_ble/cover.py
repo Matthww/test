@@ -110,9 +110,7 @@ class PowerViewCover(PassiveBluetoothCoordinatorEntity[PVCoordinator], CoverEnti
     @property
     def supported_features(self) -> CoverEntityFeature:  # type: ignore[reportIncompatibleVariableOverride]
         """Flag supported features, disable control if encryption is needed."""
-        if (
-            self._coord.data.get("home_id") and not self._coord.api.has_key
-        ) or self._coord.data.get("battery_charging"):
+        if self._coord.data.get("home_id") and not self._coord.api.has_key:
             return CoverEntityFeature(0)
 
         return super().supported_features
