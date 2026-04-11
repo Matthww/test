@@ -40,23 +40,38 @@ SHADE_TYPE: Final[dict[int, str]] = {
     6: "Duette",
     10: "Duette and Applause SkyLift",
     19: "Provenance Woven Wood",
+    26: "Vertical",
     31: "Vignette",
     32: "Vignette",
     42: "M25T Roller Blind",
     49: "AC Roller",
     52: "Banded Shades",
     53: "Sonnette",
+    57: "Carole Roman Shades",
     84: "Vignette",
-    # top down bottom up
+    # top down (single rail, inverted position)
+    7: "Top Down",
+    # top down bottom up (dual rail)
     8: "Duette, Top Down Bottom Up",
     9: "Duette DuoLite, Top Down Bottom Up",
     33: "Duette Architella, Top Down Bottom Up",
-    39: "Parkland",
     47: "Pleated, Top Down Bottom Up",
+    # tilt only (no position movement)
+    39: "Parkland",
+    40: "Everwood Alternative Wood Blinds",
+    # tilt on closed
+    18: "Bottom Up, Tilt on Closed 90°",
+    44: "Twist",
     # tilt anywhere (position + tilt)
     51: "Venetian, Tilt Anywhere",
-    54: "Vertical Blind, Tilt",
+    54: "Vertical Slats, Left Stack",
+    55: "Vertical Slats, Right Stack",
+    56: "Vertical Slats, Split Stack",
     62: "Venetian, Tilt Anywhere",
+    # duolite (dual overlapping fabrics)
+    38: "Dual Overlapped, Tilt 90°",
+    65: "Dual Overlapped",
+    95: "Dual Overlapped Illuminated",
 }
 
 class ShadeCapability(NamedTuple):
@@ -73,17 +88,27 @@ SHADE_CAPABILITIES: Final[dict[int, ShadeCapability]] = {
     # tilt anywhere (position + tilt)
     51: ShadeCapability(has_tilt=True),
     54: ShadeCapability(has_tilt=True),
+    55: ShadeCapability(has_tilt=True),
+    56: ShadeCapability(has_tilt=True),
     62: ShadeCapability(has_tilt=True),
     # tilt only (no position movement)
     39: ShadeCapability(has_tilt=True, tilt_only=True),
-    # top-down only (inverted position: 100 = fully raised, 0 = fully lowered)
+    40: ShadeCapability(has_tilt=True, tilt_only=True),
+    # tilt on closed (tilt only available at fully closed position)
+    18: ShadeCapability(has_tilt=True),
+    44: ShadeCapability(has_tilt=True),
+    # top-down only (single rail, inverted position)
+    7: ShadeCapability(is_top_down=True),
     10: ShadeCapability(is_top_down=True),
     # dual-rail top-down/bottom-up (two independent rails → two entities)
     8: ShadeCapability(is_tdbu=True),
     33: ShadeCapability(is_tdbu=True),
     47: ShadeCapability(is_tdbu=True),
-    # duolite top-down/bottom-up (sheer front + opaque rear → three entities)
+    # duolite (dual overlapping fabrics → three entities)
     9: ShadeCapability(is_tdbu=True, is_duolite=True),
+    38: ShadeCapability(is_duolite=True),
+    65: ShadeCapability(is_duolite=True),
+    95: ShadeCapability(is_duolite=True),
 }
 
 _DEFAULT_CAPABILITY: Final[ShadeCapability] = ShadeCapability()
