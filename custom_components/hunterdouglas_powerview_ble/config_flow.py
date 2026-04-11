@@ -21,7 +21,7 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
-from .const import CONF_HOME_KEY, CONF_HUB_URL, DOMAIN, LOGGER
+from .const import CONF_HOME_KEY, CONF_HUB_URL, DOMAIN, LOGGER, MFCT_ID
 
 
 def _hub_unique_id(home_key: str) -> str:
@@ -91,6 +91,11 @@ async def _fetch_key_from_hub(
 
     Tries each shade on the hub until one returns a valid key.
     The key is network-wide so any reachable shade returns the same value.
+
+    The hub must establish a BLE connection to each shade before it can proxy
+    the key request.  On the first pass that connection is often not yet open,
+    so the hub returns an error immediately.  A second pass (after a short
+    pause to let the hub complete its BLE connections) reliably succeeds.
 
     Raises ValueError on protocol/key errors.
     Raises aiohttp.ClientError on network errors.
@@ -247,11 +252,25 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle a flow initialized by Bluetooth discovery."""
         LOGGER.debug("Bluetooth device detected: %s", discovery_info)
 
-        # Tag the flow with this address so HA deduplicates future
-        # discovery flows for the same device
-        await self.async_set_unique_id(discovery_info.address)
+        # Derive a home-wide unique ID from the home_id embedded in the BLE
+        # advertisement (bytes 0-1 of the manufacturer payload).  All shades on
+        # the same network share the same home_id, so HA deduplicates every
+        # subsequent shade discovery into this single flow via
+        # "already_in_progress" rather than spawning one notification per shade.
+        mfr_data = bytearray(
+            discovery_info.manufacturer_data.get(MFCT_ID, b"")
+        )
+        if len(mfr_data) >= 2:
+            home_id = int.from_bytes(mfr_data[0:2], byteorder="little")
+            unique_id = f"pvhome_{home_id}"
+        else:
+            unique_id = DOMAIN
 
-        # If a hub entry already exists, shades are auto-discovered
+        await self.async_set_unique_id(unique_id)
+        self._abort_if_unique_id_configured()
+
+        # If a hub entry already exists (unique_id may differ), shades are
+        # auto-discovered internally — nothing more for the user to do.
         for entry in self._async_current_entries():
             if entry.version >= 2:
                 return self.async_abort(reason="already_configured")
