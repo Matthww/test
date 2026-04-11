@@ -34,6 +34,8 @@ def _add_entities(
 
     if caps.tilt_only:
         entities: list[PowerViewCover] = [PowerViewCoverTiltOnly(coordinator)]
+    elif caps.is_tilt_on_closed:
+        entities = [PowerViewCoverTiltOnClosed(coordinator)]
     elif caps.has_tilt:
         entities = [PowerViewCoverTilt(coordinator)]
     elif caps.is_top_down:
@@ -260,6 +262,35 @@ class PowerViewCoverTilt(PowerViewCover):
         LOGGER.debug("close cover tilt")
         _kwargs = {**kwargs, ATTR_TILT_POSITION: CLOSED_POSITION}
         await self.async_set_cover_tilt_position(**_kwargs)
+
+
+class PowerViewCoverTiltOnClosed(PowerViewCoverTilt):
+    """Representation of a PowerView shade whose tilt is only available when closed.
+
+    Examples: Bottom Up 90° (type 18), Twist (type 44).
+
+    If a tilt command arrives while the shade is open, the shade is closed first
+    so the tilt mechanism is engaged before the command is sent.
+    """
+
+    def __init__(self, coordinator: PVCoordinator) -> None:
+        """Initialize the shade."""
+        LOGGER.debug("%s: init() PowerViewCoverTiltOnClosed", coordinator.name)
+        super().__init__(coordinator)
+
+    async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
+        """Move the tilt to a specific position, closing first if needed."""
+        if self.current_cover_position != CLOSED_POSITION:
+            LOGGER.debug("tilt-on-closed: closing shade before tilting")
+            try:
+                self._target_position = CLOSED_POSITION
+                await self._coord.api.close(velocity=self._coord.velocity)
+                self.async_write_ha_state()
+            except BleakError as err:
+                LOGGER.error("Failed to close cover '%s' before tilt: %s", self.name, err)
+                self._reset_target_position()
+            return
+        await super().async_set_cover_tilt_position(**kwargs)
 
 
 class PowerViewCoverTopDown(PowerViewCover):
