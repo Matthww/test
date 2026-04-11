@@ -226,18 +226,25 @@ class PowerViewBLE:
         if len(data) != 9:
             LOGGER.debug("not a V2 record!")
             return {}
-        pos: Final[int] = int.from_bytes(data[3:5], byteorder="little")
+        # data[3] lower 2 bits are status flags; pos is in bits 2-7 of data[3]
+        # and bits 0-3 of data[4].  Read flags before extracting position so
+        # the masking below doesn't accidentally overwrite them.
+        flags: Final[int] = data[3] & 0x3
+        # Mask pos2 bits (upper nibble of data[4]) out before forming the
+        # 10-bit position value, otherwise a non-zero top-rail position on
+        # TDBU shades contaminates the bottom-rail reading.
+        pos: Final[int] = ((data[4] & 0x0F) << 6) | ((data[3] >> 2) & 0x3F)
         pos2: Final[int] = (int(data[5]) << 4) + (int(data[4]) >> 4)
         return {
-            ATTR_CURRENT_POSITION: (pos >> 2) / 10,
+            ATTR_CURRENT_POSITION: pos / 10,
             "position2": pos2 >> 2,
             "position3": int(data[6]),
             ATTR_CURRENT_TILT_POSITION: int(data[7]),
             "home_id": int.from_bytes(data[0:2], byteorder="little"),
             "type_id": int(data[2]),
-            "is_opening": bool(pos & 0x3 == 0x2),
-            "is_closing": bool(pos & 0x3 == 0x1),
-            "battery_charging": bool(pos & 0x3 == 0x3),  # observed
+            "is_opening": bool(flags == 0x2),
+            "is_closing": bool(flags == 0x1),
+            "battery_charging": bool(flags == 0x3),  # observed
             "battery_level": POWER_LEVELS[(data[8] >> 6)],  # cannot hit 4
             "resetMode": bool(data[8] & 0x1),
             "resetClock": bool(data[8] & 0x2),
