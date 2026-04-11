@@ -36,6 +36,8 @@ def _add_entities(
         entities: list[PowerViewCover] = [PowerViewCoverTiltOnly(coordinator)]
     elif caps.has_tilt:
         entities = [PowerViewCoverTilt(coordinator)]
+    elif caps.is_top_down:
+        entities = [PowerViewCoverTopDown(coordinator)]
     else:
         entities = [PowerViewCover(coordinator)]
 
@@ -260,6 +262,72 @@ class PowerViewCoverTilt(PowerViewCover):
         LOGGER.debug("close cover tilt")
         _kwargs = {**kwargs, ATTR_TILT_POSITION: CLOSED_POSITION}
         await self.async_set_cover_tilt_position(**_kwargs)
+
+
+class PowerViewCoverTopDown(PowerViewCover):
+    """Representation of a top-down PowerView shade.
+
+    The device position axis is inverted: device 0 = open (fabric retracted),
+    device 100 = closed (fabric fully extended). We translate at the boundary
+    so HA's standard 0=closed / 100=open convention is preserved.
+    """
+
+    @property
+    def current_cover_position(self) -> int | None:  # type: ignore[reportIncompatibleVariableOverride]
+        """Return current position, inverting the device axis."""
+        pos: Final = self._coord.data.get(ATTR_CURRENT_POSITION)
+        return OPEN_POSITION - round(pos) if pos is not None else None
+
+    async def async_set_cover_position(self, **kwargs: Any) -> None:
+        """Move the cover to a specific position, inverting for the device."""
+        target_position: Final = kwargs.get(ATTR_POSITION)
+        if target_position is not None:
+            inverted = OPEN_POSITION - round(target_position)
+            LOGGER.debug("set top-down cover to position %f (device %i)", target_position, inverted)
+            if self.current_cover_position == round(target_position) and not (
+                self.is_closing or self.is_opening
+            ):
+                return
+            self._target_position = round(target_position)
+            try:
+                await self._coord.api.set_position(
+                    inverted,
+                    velocity=self._coord.velocity,
+                )
+                self.async_write_ha_state()
+            except BleakError as err:
+                LOGGER.error(
+                    "Failed to move cover '%s' to %f%%: %s",
+                    self.name,
+                    target_position,
+                    err,
+                )
+
+    async def async_open_cover(self, **kwargs: Any) -> None:
+        """Open the cover (send device position 0)."""
+        LOGGER.debug("open top-down cover")
+        if self.current_cover_position == OPEN_POSITION:
+            return
+        try:
+            self._target_position = OPEN_POSITION
+            await self._coord.api.set_position(CLOSED_POSITION, velocity=self._coord.velocity)
+            self.async_write_ha_state()
+        except BleakError as err:
+            LOGGER.error("Failed to open cover '%s': %s", self.name, err)
+            self._reset_target_position()
+
+    async def async_close_cover(self, **kwargs: Any) -> None:
+        """Close the cover (send device position 100)."""
+        LOGGER.debug("close top-down cover")
+        if self.current_cover_position == CLOSED_POSITION:
+            return
+        try:
+            self._target_position = CLOSED_POSITION
+            await self._coord.api.set_position(OPEN_POSITION, velocity=self._coord.velocity)
+            self.async_write_ha_state()
+        except BleakError as err:
+            LOGGER.error("Failed to close cover '%s': %s", self.name, err)
+            self._reset_target_position()
 
 
 class PowerViewCoverTiltOnly(PowerViewCoverTilt):
