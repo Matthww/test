@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from enum import Enum
 import time
-from typing import Final, NamedTuple
+from typing import Final
 
 from bleak import BleakClient
 from bleak.backends.device import BLEDevice
@@ -40,87 +40,22 @@ SHADE_TYPE: Final[dict[int, str]] = {
     6: "Duette",
     10: "Duette and Applause SkyLift",
     19: "Provenance Woven Wood",
-    26: "Vertical",
     31: "Vignette",
     32: "Vignette",
     42: "M25T Roller Blind",
     49: "AC Roller",
     52: "Banded Shades",
     53: "Sonnette",
-    57: "Carole Roman Shades",
     84: "Vignette",
-    # top down (single rail, inverted position)
-    7: "Top Down",
-    # top down bottom up (dual rail)
+    # top down bottom up
     8: "Duette, Top Down Bottom Up",
     9: "Duette DuoLite, Top Down Bottom Up",
     33: "Duette Architella, Top Down Bottom Up",
     47: "Pleated, Top Down Bottom Up",
-    # tilt only (no position movement)
-    39: "Parkland",
-    40: "Everwood Alternative Wood Blinds",
-    # tilt on closed
-    18: "Bottom Up, Tilt on Closed 90°",
-    44: "Twist",
-    # tilt anywhere (position + tilt)
+    # top down, tilt anywhere
     51: "Venetian, Tilt Anywhere",
-    54: "Vertical Slats, Left Stack",
-    55: "Vertical Slats, Right Stack",
-    56: "Vertical Slats, Split Stack",
     62: "Venetian, Tilt Anywhere",
-    # duolite (dual overlapping fabrics)
-    38: "Dual Overlapped, Tilt 90°",
-    65: "Dual Overlapped",
-    95: "Dual Overlapped Illuminated",
 }
-
-class ShadeCapability(NamedTuple):
-    """Capability flags for a shade type."""
-
-    has_tilt: bool = False
-    tilt_only: bool = False
-    is_tilt_on_closed: bool = False  # tilt only available when fully closed
-    is_top_down: bool = False  # position logic is inverted (SkyLift style)
-    is_tdbu: bool = False  # dual-rail Top Down Bottom Up (needs two entities)
-    is_duolite: bool = False  # dual-fabric sheer+opaque (needs three entities)
-
-
-SHADE_CAPABILITIES: Final[dict[int, ShadeCapability]] = {
-    # tilt anywhere (position + tilt)
-    51: ShadeCapability(has_tilt=True),
-    54: ShadeCapability(has_tilt=True),
-    55: ShadeCapability(has_tilt=True),
-    56: ShadeCapability(has_tilt=True),
-    62: ShadeCapability(has_tilt=True),
-    # tilt only (no position movement)
-    39: ShadeCapability(has_tilt=True, tilt_only=True),
-    40: ShadeCapability(has_tilt=True, tilt_only=True),
-    # tilt on closed (tilt only available at fully closed position)
-    18: ShadeCapability(has_tilt=True, is_tilt_on_closed=True),
-    44: ShadeCapability(has_tilt=True, is_tilt_on_closed=True),
-    # top-down only (single rail, inverted position)
-    7: ShadeCapability(is_top_down=True),
-    10: ShadeCapability(is_top_down=True),
-    # dual-rail top-down/bottom-up (two independent rails → two entities)
-    8: ShadeCapability(is_tdbu=True),
-    33: ShadeCapability(is_tdbu=True),
-    47: ShadeCapability(is_tdbu=True),
-    # duolite (dual overlapping fabrics → three entities)
-    9: ShadeCapability(is_tdbu=True, is_duolite=True),
-    38: ShadeCapability(is_duolite=True),
-    65: ShadeCapability(is_duolite=True),
-    95: ShadeCapability(is_duolite=True),
-}
-
-_DEFAULT_CAPABILITY: Final[ShadeCapability] = ShadeCapability()
-
-
-def get_shade_capabilities(type_id: int | None) -> ShadeCapability:
-    """Return shade capabilities for a given type_id."""
-    if type_id is None:
-        return _DEFAULT_CAPABILITY
-    return SHADE_CAPABILITIES.get(type_id, _DEFAULT_CAPABILITY)
-
 
 OPEN_POSITION: Final[int] = 100
 CLOSED_POSITION: Final[int] = 0
@@ -161,10 +96,18 @@ class PowerViewBLE:
 
     def __init__(self, ble_device: BLEDevice, home_key: bytes = b"") -> None:
         """Initialize device API via Bluetooth."""
-        self._ble_device: BLEDevice = ble_device
+        self._ble_device: Final[BLEDevice] = ble_device
         self.name: Final[str] = self._ble_device.name or "unknown"
         self._seqcnt: int = 1
-        self._client: BleakClient = BleakClient(self._ble_device)
+        self._client: BleakClient = BleakClient(
+            self._ble_device,
+            disconnected_callback=self._on_disconnect,
+            services=[
+                UUID_COV_SERVICE,
+                UUID_DEV_SERVICE,
+                # self.UUID_BAT_SERVICE,
+            ],
+        )
         self._data_event = asyncio.Event()
         self._data: bytes = b""
         self._info: PVDeviceInfo = PVDeviceInfo()
@@ -181,10 +124,6 @@ class PowerViewBLE:
         await self._data_event.wait()
         self._data_event.clear()
 
-    def set_ble_device(self, ble_device: BLEDevice) -> None:
-        """Update the BLE device reference (e.g. when proxy details change)."""
-        self._ble_device = ble_device
-
     @property
     def encrypted(self) -> bool:
         """Return whether communication with this shade is encrypted."""
@@ -193,11 +132,6 @@ class PowerViewBLE:
     @encrypted.setter
     def encrypted(self, value: bool) -> None:
         self._is_encrypted = value
-
-    @property
-    def has_key(self) -> bool:
-        """Return True if a valid homekey was provided."""
-        return self._cipher is not None
 
     @property
     def info(self) -> PVDeviceInfo:
@@ -247,81 +181,82 @@ class PowerViewBLE:
                 raise
 
     @staticmethod
-    def dec_manufacturer_data(data: bytearray) -> dict[str, float | int | bool]:
+    def dec_manufacturer_data(data: bytearray) -> list[tuple[str, float]]:
         """Decode manufacturer data from BLE advertisement V2."""
+
         if len(data) != 9:
             LOGGER.debug("not a V2 record!")
-            return {}
-        # data[3] lower 2 bits are status flags; pos is in bits 2-7 of data[3]
-        # and bits 0-3 of data[4].  Read flags before extracting position so
-        # the masking below doesn't accidentally overwrite them.
-        flags: Final[int] = data[3] & 0x3
-        # Mask pos2 bits (upper nibble of data[4]) out before forming the
-        # 10-bit position value, otherwise a non-zero top-rail position on
-        # TDBU shades contaminates the bottom-rail reading.
-        pos: Final[int] = ((data[4] & 0x0F) << 6) | ((data[3] >> 2) & 0x3F)
+            return []
+        # Get the last 4 bits of data[4] and shift them 6 places to the left
+        last_4_bits = (data[4] & 0b1111) << 6
+        # Get the first 6 bits of data[3]
+        first_6_bits = (data[3] >> 2) & 0b111111
+        # Combine them into a single integer
+        pos = last_4_bits | first_6_bits
+
+        # LOGGER.debug(f"(bin: {data[3]:08b} - {data[4]:08b} - {data[5]:08b})")
+
         pos2: Final[int] = (int(data[5]) << 4) + (int(data[4]) >> 4)
-        return {
-            ATTR_CURRENT_POSITION: pos / 10,
-            "position2": pos2 >> 2,
-            "position3": int(data[6]),
-            ATTR_CURRENT_TILT_POSITION: int(data[7]),
-            "home_id": int.from_bytes(data[0:2], byteorder="little"),
-            "type_id": int(data[2]),
-            "is_opening": bool(flags == 0x2),
-            "is_closing": bool(flags == 0x1),
-            "battery_charging": bool(flags == 0x3),  # observed
-            "battery_level": POWER_LEVELS[(data[8] >> 6)],  # cannot hit 4
-            "resetMode": bool(data[8] & 0x1),
-            "resetClock": bool(data[8] & 0x2),
-        }
+        return [
+            (ATTR_CURRENT_POSITION, (pos / 10)),
+            ("position2", pos2 >> 2),
+            ("position3", int(data[6])),
+            (ATTR_CURRENT_TILT_POSITION, ((pos2 >> 2) / 10)),  # int(data[7])),
+            ("home_id", int.from_bytes(data[0:2], byteorder="little")),
+            ("type_id", int(data[2])),
+            ("is_opening", bool(pos & 0x3 == 0x2)),
+            ("is_closing", bool(pos & 0x3 == 0x1)),
+            ("battery_charging", bool(pos & 0x3 == 0x3)),  # observed
+            ("battery_level", POWER_LEVELS[(data[8] >> 6)]),  # cannot hit 4
+            ("resetMode", bool(data[8] & 0x1)),
+            ("resetClock", bool(data[8] & 0x2)),
+        ]
 
     # position cmd: uint16_t pos1, uint16_t pos2, uint16_t pos3, uint16_t tilt, uint8_t velocity
     async def set_position(
         self,
         pos1: int,
-        pos2: int = 0x8000,
-        pos3: int = 0x8000,
-        tilt: int = 0x8000,
+        pos2: int | None = None,
+        pos3: int | None = None,
+        tilt: int | None = None,
         velocity: int = 0x0,
         disconnect: bool = True,
     ) -> None:
         """Set position of device."""
-        LOGGER.debug(
-            "%s setting position to %i/%i/%i, tilt %s, velocity %s",
-            self.name,
-            pos1,
-            pos2,
-            pos3,
-            tilt,
-            velocity,
-        )
+
+        LOGGER.warn("%s setting position to %i, tilt %i", self.name, pos1, tilt)
         await self._cmd(
             (
                 ShadeCmd.SET_POSITION,
                 int.to_bytes(pos1 * 100, 2, byteorder="little")
-                + int.to_bytes(pos2, 2, byteorder="little")
-                + int.to_bytes(pos3, 2, byteorder="little")
-                + int.to_bytes(tilt, 2, byteorder="little")
+                + int.to_bytes(
+                    pos2 * 100 if pos2 is not None else 0x8000, 2, byteorder="little"
+                )
+                + int.to_bytes(
+                    pos3 if pos3 is not None else 0x8000, 2, byteorder="little"
+                )
+                + int.to_bytes(
+                    tilt if tilt is not None else 0x8000, 2, byteorder="little"
+                )
                 + int.to_bytes(velocity, 1),
             ),
             disconnect,
         )
 
-    async def open(self, velocity: int = 0x0) -> None:
+    async def open(self) -> None:
         """Fully open cover."""
         LOGGER.debug("%s open", self.name)
-        await self.set_position(OPEN_POSITION, velocity=velocity, disconnect=False)
+        await self.set_position(OPEN_POSITION, disconnect=False)
 
     async def stop(self) -> None:
         """Stop device movement."""
         LOGGER.debug("%s stop", self.name)
         await self._cmd((ShadeCmd.STOP, b""))
 
-    async def close(self, velocity: int = 0x0) -> None:
+    async def close(self) -> None:
         """Fully close cover."""
         LOGGER.debug("%s close", self.name)
-        await self.set_position(CLOSED_POSITION, velocity=velocity, disconnect=False)
+        await self.set_position(CLOSED_POSITION, disconnect=False)
 
     # uint8_t scene#, uint8_t unknown
     # open: scene 2
@@ -385,8 +320,8 @@ class PowerViewBLE:
                         .copy()
                         .decode("UTF-8")
                     )
-            except BleakError as ex:
-                LOGGER.debug("%s: querying failed: %s", self.name, ex)
+            except Exception as ex:
+                LOGGER.error("Error: %s - %s", type(ex).__name__, ex)
                 raise
             finally:
                 await self.disconnect()
@@ -427,7 +362,6 @@ class PowerViewBLE:
             self._ble_device,
             self.name,
             disconnected_callback=self._on_disconnect,
-            ble_device_callback=lambda: self._ble_device,
             services=[
                 UUID_COV_SERVICE,
                 UUID_DEV_SERVICE,
