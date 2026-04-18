@@ -288,7 +288,7 @@ class PowerViewBLE:
     ) -> None:
         """Set position of device."""
         LOGGER.debug(
-            "%s setting position to %i/%i/%i, tilt %i, velocity %s",
+            "%s setting position to %i/%i/%i, tilt %s, velocity %s",
             self.name,
             pos1,
             pos2,
