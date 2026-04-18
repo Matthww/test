@@ -224,7 +224,7 @@ class PowerViewBLE:
     ) -> None:
         """Set position of device."""
 
-        LOGGER.warn("%s setting position to %i, tilt %i", self.name, pos1, tilt)
+        LOGGER.warn("%s setting position to %i, tilt %s", self.name, pos1, tilt)
         await self._cmd(
             (
                 ShadeCmd.SET_POSITION,
