@@ -2,8 +2,6 @@
 
 from typing import Any, Final
 
-from bleak.exc import BleakError
-
 from homeassistant.components.bluetooth.passive_update_coordinator import (
     PassiveBluetoothCoordinatorEntity,
 )
@@ -120,7 +118,7 @@ class PowerViewCover(PassiveBluetoothCoordinatorEntity[PVCoordinator], CoverEnti
         return round(pos) if pos is not None else None
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
-    
+
         target_position: Final = kwargs.get(ATTR_POSITION)
         if target_position is not None:
             LOGGER.debug("set cover to position %f", target_position)
@@ -130,9 +128,9 @@ class PowerViewCover(PassiveBluetoothCoordinatorEntity[PVCoordinator], CoverEnti
                 return
             self._target_position = round(target_position)
             try:
-                await self._coord.api.set_position(round(target_position), tilt = self.current_cover_tilt_position )
+                await self._coord.api.set_position(round(target_position), tilt=self.current_cover_tilt_position)
                 self.async_write_ha_state()
-            except BleakError as err:
+            except Exception as err:
                 LOGGER.error(
                     "Failed to move cover '%s' to %f%%: %s",
                     self.name,
@@ -152,7 +150,7 @@ class PowerViewCover(PassiveBluetoothCoordinatorEntity[PVCoordinator], CoverEnti
             self._target_position = OPEN_POSITION
             await self._coord.api.open()
             self.async_write_ha_state()
-        except BleakError as err:
+        except Exception as err:
             LOGGER.error("Failed to open cover '%s': %s", self.name, err)
             self._reset_target_position()
 
@@ -165,7 +163,7 @@ class PowerViewCover(PassiveBluetoothCoordinatorEntity[PVCoordinator], CoverEnti
             self._target_position = CLOSED_POSITION
             await self._coord.api.close()
             self.async_write_ha_state()
-        except BleakError as err:
+        except Exception as err:
             LOGGER.error("Failed to close cover '%s': %s", self.name, err)
             self._reset_target_position()
 
@@ -176,7 +174,7 @@ class PowerViewCover(PassiveBluetoothCoordinatorEntity[PVCoordinator], CoverEnti
             await self._coord.api.stop()
             self._reset_target_position()
             self.async_write_ha_state()
-        except BleakError as err:
+        except Exception as err:
             LOGGER.error("Failed to stop cover '%s': %s", self.name, err)
 
 
@@ -223,10 +221,10 @@ class PowerViewCoverTilt(PowerViewCover):
 
             try:
                 await self._coord.api.set_position(
-                    self.current_cover_position, pos2=target_position
+                    self.current_cover_position, tilt=target_position
                 )
                 self.async_write_ha_state()
-            except BleakError as err:
+            except Exception as err:
                 LOGGER.error(
                     "Failed to tilt cover '%s' to %f%%: %s",
                     self.name,
